@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Journal - Professional Trading Tracker</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.10.3/Recharts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } = window.Recharts;
+
+    // Iconos simples
+    const Plus = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+    const Trash2 = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path></svg>;
+    const Edit2 = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>;
+    const TrendingUp = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>;
+    const DollarSign = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>;
+    const Percent = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="8" cy="6" r="3"></circle><circle cx="18" cy="18" r="3"></circle><line x1="6" y1="9" x2="18" y2="3"></line></svg>;
+    const Target = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="9"></circle></svg>;
+    const Upload = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>;
+    const AlertCircle = ({ size = 24 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
+
+    const TradingJournal = () => {
+      const [trades, setTrades] = useState(() => {
+        const saved = localStorage.getItem('tradingJournal');
+        return saved ? JSON.parse(saved) : [];
+      });
+      
+      const [showForm, setShowForm] = useState(false);
+      const [editingId, setEditingId] = useState(null);
+      const [filterSymbol, setFilterSymbol] = useState('all');
+      const [filterType, setFilterType] = useState('all');
+      const [filterStatus, setFilterStatus] = useState('all');
+      const [importMessage, setImportMessage] = useState('');
+      const [importError, setImportError] = useState('');
+      
+      const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        symbol: '',
+        type: 'long',
+        entryPrice: '',
+        exitPrice: '',
+        quantity: '',
+        riskAmount: '',
+        setup: '',
+        status: 'win',
+        emotion: 5,
+        notes: '',
+        commission: 0,
+        fees: 0
+      });
+
+      useEffect(() => {
+        localStorage.setItem('tradingJournal', JSON.stringify(trades));
+      }, [trades]);
+
+      const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({
+          ...prev,
+          [name]: ['emotion', 'quantity', 'entryPrice', 'exitPrice', 'riskAmount', 'commission', 'fees'].includes(name) ? (parseFloat(value) || '') : value
+        }));
+      };
+
+      const calculatePnL = (entry, exit, qty, type, commission = 0, fees = 0) => {
+        if (!entry || !exit || !qty) return 0;
+        const diff = type === 'long' ? exit - entry : entry - exit;
+        const grossPnL = diff * qty;
+        const netPnL = grossPnL - commission - fees;
+        return netPnL;
+      };
+
+      const handleAddTrade = () => {
+        if (!formData.symbol || !formData.entryPrice || !formData.exitPrice || !formData.quantity) {
+          alert('Por favor completa los campos obligatorios');
+          return;
+        }
+
+        const commission = parseFloat(formData.commission) || 0;
+        const fees = parseFloat(formData.fees) || 0;
+        const pnl = calculatePnL(formData.entryPrice, formData.exitPrice, formData.quantity, formData.type, commission, fees);
+        const pnlPercent = ((formData.exitPrice - formData.entryPrice) / formData.entryPrice * 100);
+
+        if (editingId) {
+          setTrades(trades.map(t => t.id === editingId ? {
+            ...formData,
+            id: editingId,
+            pnl,
+            pnlPercent,
+            commission,
+            fees
+          } : t));
+          setEditingId(null);
+        } else {
+          setTrades([...trades, {
+            ...formData,
+            id: Date.now(),
+            pnl,
+            pnlPercent,
+            commission,
+            fees
+          }]);
+        }
+
+        setFormData({
+          date: new Date().toISOString().split('T')[0],
+          symbol: '',
+          type: 'long',
+          entryPrice: '',
+          exitPrice: '',
+          quantity: '',
+          riskAmount: '',
+          setup: '',
+          status: 'win',
+          emotion: 5,
+          notes: '',
+          commission: 0,
+          fees: 0
+        });
+        setShowForm(false);
+      };
+
+      const handleEdit = (trade) => {
+        setFormData({
+          date: trade.date,
+          symbol: trade.symbol,
+          type: trade.type,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.exitPrice,
+          quantity: trade.quantity,
+          riskAmount: trade.riskAmount,
+          setup: trade.setup,
+          status: trade.status,
+          emotion: trade.emotion,
+          notes: trade.notes,
+          commission: trade.commission || 0,
+          fees: trade.fees || 0
+        });
+        setEditingId(trade.id);
+        setShowForm(true);
+      };
+
+      const handleDelete = (id) => {
+        if (confirm('¿Estás seguro de que quieres eliminar este trade?')) {
+          setTrades(trades.filter(t => t.id !== id));
+        }
+      };
+
+      const handleImportExcel = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setImportError('');
+        setImportMessage('');
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = e.target?.result;
+            const workbook = window.XLSX.read(data, { type: 'binary' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = window.XLSX.utils.sheet_to_json(worksheet);
+
+            if (jsonData.length === 0) {
+              setImportError('El archivo Excel está vacío');
+              return;
+            }
+
+            const importedTrades = jsonData.map(row => {
+              const symbol = String(row.symbol || row.Symbol || '').toUpperCase().trim();
+              const type = String(row.type || row.Type || 'long').toLowerCase().trim();
+              const entryPrice = parseFloat(row.entryPrice || row['Entry Price'] || row.entrada || 0);
+              const exitPrice = parseFloat(row.exitPrice || row['Exit Price'] || row.salida || 0);
+              const quantity = parseFloat(row.quantity || row.Quantity || row.qty || row.Qty || 0);
+              const commission = parseFloat(row.commission || row.Commission || row.comisión || 0);
+              const fees = parseFloat(row.fees || row.Fees || 0);
+              const date = String(row.date || row.Date || row.fecha || new Date().toISOString().split('T')[0]).substring(0, 10);
+              
+              if (!symbol || !entryPrice || !exitPrice || !quantity) {
+                throw new Error(`Fila incompleta. Verifica que tenga Símbolo, Precio Entrada, Precio Salida y Cantidad.`);
+              }
+
+              const pnl = calculatePnL(entryPrice, exitPrice, quantity, type, commission, fees);
+              const status = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : 'breakeven';
+
+              return {
+                id: Date.now() + Math.random(),
+                date,
+                symbol,
+                type: ['long', 'short'].includes(type) ? type : 'long',
+                entryPrice,
+                exitPrice,
+                quantity,
+                riskAmount: parseFloat(row.riskAmount || row['Risk Amount'] || 0),
+                setup: String(row.setup || row.Setup || row.seteo || '').trim(),
+                status,
+                emotion: parseFloat(row.emotion || row.Emotion || row.confianza || 5),
+                notes: String(row.notes || row.Notes || row.notas || '').trim(),
+                commission,
+                fees,
+                pnl,
+                pnlPercent: ((exitPrice - entryPrice) / entryPrice * 100)
+              };
+            });
+
+            setTrades(prev => [...prev, ...importedTrades]);
+            setImportMessage(`✓ Se importaron ${importedTrades.length} trades exitosamente`);
+            event.target.value = '';
+            setTimeout(() => setImportMessage(''), 5000);
+          } catch (err) {
+            setImportError(`Error al procesar el archivo: ${err.message}`);
+            event.target.value = '';
+          }
+        };
+        reader.readAsBinaryString(file);
+      };
+
+      const handleExportExcel = () => {
+        const exportData = trades.map(({ id, ...rest }) => rest);
+        const ws = window.XLSX.utils.json_to_sheet(exportData);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, 'Trades');
+        window.XLSX.writeFile(wb, `trading_journal_${new Date().toISOString().split('T')[0]}.xlsx`);
+      };
+
+      const filteredTrades = trades.filter(t => {
+        const symbolMatch = filterSymbol === 'all' || t.symbol === filterSymbol;
+        const typeMatch = filterType === 'all' || t.type === filterType;
+        const statusMatch = filterStatus === 'all' || t.status === filterStatus;
+        return symbolMatch && typeMatch && statusMatch;
+      });
+
+      const stats = {
+        totalTrades: filteredTrades.length,
+        winningTrades: filteredTrades.filter(t => t.pnl > 0).length,
+        losingTrades: filteredTrades.filter(t => t.pnl < 0).length,
+        totalPnL: filteredTrades.reduce((sum, t) => sum + t.pnl, 0),
+        winRate: filteredTrades.length > 0 ? (filteredTrades.filter(t => t.pnl > 0).length / filteredTrades.length * 100).toFixed(1) : 0,
+        avgWin: filteredTrades.filter(t => t.pnl > 0).length > 0 ? (filteredTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / filteredTrades.filter(t => t.pnl > 0).length).toFixed(2) : 0,
+        avgLoss: filteredTrades.filter(t => t.pnl < 0).length > 0 ? (filteredTrades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0) / filteredTrades.filter(t => t.pnl < 0).length).toFixed(2) : 0,
+        profitFactor: filteredTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / Math.abs(filteredTrades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0) || 1),
+        bestTrade: filteredTrades.length > 0 ? Math.max(...filteredTrades.map(t => t.pnl)) : 0,
+        worstTrade: filteredTrades.length > 0 ? Math.min(...filteredTrades.map(t => t.pnl)) : 0
+      };
+
+      const equityCurve = filteredTrades.reduce((acc, trade) => {
+        const lastValue = acc.length > 0 ? acc[acc.length - 1].equity : 0;
+        return [...acc, {
+          date: trade.date,
+          equity: lastValue + trade.pnl,
+          pnl: trade.pnl
+        }];
+      }, []);
+
+      const symbolStats = {};
+      filteredTrades.forEach(t => {
+        if (!symbolStats[t.symbol]) {
+          symbolStats[t.symbol] = { symbol: t.symbol, trades: 0, pnl: 0, wins: 0 };
+        }
+        symbolStats[t.symbol].trades++;
+        symbolStats[t.symbol].pnl += t.pnl;
+        if (t.pnl > 0) symbolStats[t.symbol].wins++;
+      });
+
+      const symbolChartData = Object.values(symbolStats).map(s => ({
+        ...s,
+        winRate: ((s.wins / s.trades) * 100).toFixed(1)
+      }));
+
+      const typeDistribution = [
+        { name: 'Long', value: filteredTrades.filter(t => t.type === 'long').length, fill: '#10b981' },
+        { name: 'Short', value: filteredTrades.filter(t => t.type === 'short').length, fill: '#ef4444' }
+      ].filter(t => t.value > 0);
+
+      const setupStats = {};
+      filteredTrades.forEach(t => {
+        if (t.setup) {
+          if (!setupStats[t.setup]) {
+            setupStats[t.setup] = { setup: t.setup, trades: 0, pnl: 0, wins: 0 };
+          }
+          setupStats[t.setup].trades++;
+          setupStats[t.setup].pnl += t.pnl;
+          if (t.pnl > 0) setupStats[t.setup].wins++;
+        }
+      });
+
+      const setupChartData = Object.values(setupStats).sort((a, b) => b.trades - a.trades).slice(0, 5);
+
+      const emotionRiskData = filteredTrades.map(t => ({
+        emotion: t.emotion,
+        pnl: t.pnl,
+        symbol: t.symbol
+      }));
+
+      const uniqueSymbols = [...new Set(trades.map(t => t.symbol))];
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 shadow-lg">
+            <div className="max-w-7xl mx-auto">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h1 className="text-4xl font-bold">Trading Journal</h1>
+                  <p className="text-blue-100 mt-1">Track, analyze, and improve your trading</p>
+                </div>
+                <div className="flex gap-3 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setShowForm(!showForm);
+                      setEditingId(null);
+                      setFormData({
+                        date: new Date().toISOString().split('T')[0],
+                        symbol: '',
+                        type: 'long',
+                        entryPrice: '',
+                        exitPrice: '',
+                        quantity: '',
+                        riskAmount: '',
+                        setup: '',
+                        status: 'win',
+                        emotion: 5,
+                        notes: '',
+                        commission: 0,
+                        fees: 0
+                      });
+                    }}
+                    className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 flex items-center gap-2 transition"
+                  >
+                    <Plus size={20} /> Nuevo Trade
+                  </button>
+                  <label className="cursor-pointer">
+                    <div className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 flex items-center gap-2 transition">
+                      <Upload size={20} /> Importar Excel
+                    </div>
+                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} className="hidden" />
+                  </label>
+                  <button onClick={handleExportExcel} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 flex items-center gap-2 transition">
+                    Descargar Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mensajes */}
+          {importMessage && (
+            <div className="bg-green-500/20 border border-green-500 text-green-400 p-4">
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+                <div className="flex-1">{importMessage}</div>
+                <button onClick={() => setImportMessage('')} className="text-green-400 hover:text-green-300">✕</button>
+              </div>
+            </div>
+          )}
+          {importError && (
+            <div className="bg-red-500/20 border border-red-500 text-red-400 p-4">
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+                <AlertCircle size={20} />
+                <div className="flex-1">{importError}</div>
+                <button onClick={() => setImportError('')} className="text-red-400 hover:text-red-300">✕</button>
+              </div>
+            </div>
+          )}
+
+          {/* Formulario */}
+          {showForm && (
+            <div className="bg-slate-800 border-b border-slate-700 p-6">
+              <div className="max-w-7xl mx-auto">
+                <h2 className="text-2xl font-bold text-white mb-6">{editingId ? 'Editar Trade' : 'Registrar Nuevo Trade'}</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Fecha</label>
+                    <input type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Símbolo</label>
+                    <input type="text" name="symbol" placeholder="EUR/USD" value={formData.symbol} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Tipo</label>
+                    <select name="type" value={formData.type} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none">
+                      <option value="long">Long</option>
+                      <option value="short">Short</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Precio Entrada</label>
+                    <input type="number" step="0.00001" name="entryPrice" value={formData.entryPrice} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Precio Salida</label>
+                    <input type="number" step="0.00001" name="exitPrice" value={formData.exitPrice} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Cantidad/Lotes</label>
+                    <input type="number" step="0.01" name="quantity" value={formData.quantity} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Riesgo ($)</label>
+                    <input type="number" step="0.01" name="riskAmount" value={formData.riskAmount} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Setup</label>
+                    <input type="text" name="setup" placeholder="ej: Breakout, Support" value={formData.setup} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Estado</label>
+                    <select name="status" value={formData.status} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none">
+                      <option value="win">Win</option>
+                      <option value="loss">Loss</option>
+                      <option value="breakeven">Break Even</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Confianza (1-10)</label>
+                    <input type="number" min="1" max="10" name="emotion" value={formData.emotion} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Comisión ($)</label>
+                    <input type="number" step="0.01" name="commission" value={formData.commission} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Fees/Swap ($)</label>
+                    <input type="number" step="0.01" name="fees" value={formData.fees} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" placeholder="0.00" />
+                  </div>
+                  <div className="lg:col-span-4">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Notas</label>
+                    <textarea name="notes" value={formData.notes} onChange={handleInputChange} className="w-full bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 focus:border-blue-500 outline-none" rows="2" placeholder="Detalles sobre tu decisión..."></textarea>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={handleAddTrade} className="bg-blue-600 text-white px-8 py-2 rounded font-semibold hover:bg-blue-700 transition">
+                    {editingId ? 'Actualizar' : 'Guardar'} Trade
+                  </button>
+                  <button onClick={() => { setShowForm(false); setEditingId(null); }} className="bg-slate-700 text-white px-8 py-2 rounded font-semibold hover:bg-slate-600 transition">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Stats Cards */}
+          <div className="max-w-7xl mx-auto p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-gray-400 text-sm">Total P&L</p>
+                    <p className={`text-3xl font-bold mt-2 ${stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {stats.totalPnL > 0 ? '+' : ''}{stats.totalPnL.toFixed(2)}
+                    </p>
+                  </div>
+                  <DollarSign className={stats.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'} size={32} />
+                </div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-gray-400 text-sm">Win Rate</p>
+                    <p className="text-3xl font-bold mt-2 text-blue-400">{stats.winRate}%</p>
+                    <p className="text-xs text-gray-500 mt-1">{stats.winningTrades}W / {stats.losingTrades}L</p>
+                  </div>
+                  <Percent className="text-blue-400" size={32} />
+                </div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-gray-400 text-sm">Profit Factor</p>
+                    <p className={`text-3xl font-bold mt-2 ${stats.profitFactor >= 1.5 ? 'text-green-400' : stats.profitFactor >= 1 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {stats.profitFactor.toFixed(2)}
+                    </p>
+                  </div>
+                  <TrendingUp className={stats.profitFactor >= 1.5 ? 'text-green-400' : stats.profitFactor >= 1 ? 'text-yellow-400' : 'text-red-400'} size={32} />
+                </div>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-gray-400 text-sm">Total Trades</p>
+                    <p className="text-3xl font-bold mt-2 text-purple-400">{stats.totalTrades}</p>
+                  </div>
+                  <Target className="text-purple-400" size={32} />
+                </div>
+              </div>
+            </div>
+
+            {/* Filtros */}
+            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 mb-8">
+              <div className="flex flex-wrap gap-4 items-center">
+                <select value={filterSymbol} onChange={(e) => setFilterSymbol(e.target.value)} className="bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 text-sm">
+                  <option value="all">Todos los Símbolos</option>
+                  {uniqueSymbols.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 text-sm">
+                  <option value="all">Todos los Tipos</option>
+                  <option value="long">Long</option>
+                  <option value="short">Short</option>
+                </select>
+                <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="bg-slate-700 text-white px-4 py-2 rounded border border-slate-600 text-sm">
+                  <option value="all">Todos los Estados</option>
+                  <option value="win">Winning</option>
+                  <option value="loss">Losing</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Gráficos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <h3 className="text-xl font-bold text-white mb-4">Equity Curve</h3>
+                {equityCurve.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={equityCurve}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                      <XAxis dataKey="date" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }} />
+                      <Line type="monotone" dataKey="equity" stroke="#3b82f6" dot={false} strokeWidth={2} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-gray-400 text-center py-12">No hay datos disponibles</p>
+                )}
+              </div>
+
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                <h3 className="text-xl font-bold text-white mb-4">Long vs Short</h3>
+                {typeDistribution.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie data={typeDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: ${value}`} outerRadius={80} fill="#8884d8" dataKey="value">
+                        {typeDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-gray-400 text-center py-12">No hay datos disponibles</p>
+                )}
+              </div>
+
+              <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 lg:col-span-2">
+                <h3 className="text-xl font-bold text-white mb-4">Performance por Símbolo</h3>
+                {symbolChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={symbolChartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                      <XAxis dataKey="symbol" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }} formatter={(value) => value.toFixed(2)} />
+                      <Legend />
+                      <Bar dataKey="pnl" fill="#3b82f6" name="P&L" />
+                      <Bar dataKey="trades" fill="#10b981" name="Trades" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-gray-400 text-center py-12">No hay datos disponibles</p>
+                )}
+              </div>
+
+              {setupChartData.length > 0 && (
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 lg:col-span-2">
+                  <h3 className="text-xl font-bold text-white mb-4">Top Setups</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={setupChartData} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                      <XAxis type="number" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <YAxis type="category" dataKey="setup" stroke="#94a3b8" style={{ fontSize: '12px' }} width={100} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }} />
+                      <Bar dataKey="pnl" fill="#a78bfa" name="P&L" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {emotionRiskData.length > 0 && (
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 lg:col-span-2">
+                  <h3 className="text-xl font-bold text-white mb-4">Confianza vs Resultado</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                      <XAxis dataKey="emotion" name="Confianza" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <YAxis dataKey="pnl" name="P&L" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }} cursor={{ strokeDasharray: '3 3' }} />
+                      <Scatter name="Trades" data={emotionRiskData} fill="#06b6d4" />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            {/* Tabla */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden mb-8">
+              <div className="p-6 border-b border-slate-700">
+                <h3 className="text-xl font-bold text-white">Historial de Trades</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Fecha</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Símbolo</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Tipo</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Entrada</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Salida</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Qty</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">P&L Bruto</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Comisión</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Fees</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">P&L Neto</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Setup</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Conf</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700">
+                    {filteredTrades.length > 0 ? (
+                      [...filteredTrades].reverse().map(trade => {
+                        const grossPnL = (trade.pnlPercent / 100) * (trade.entryPrice * trade.quantity);
+                        return (
+                          <tr key={trade.id} className="hover:bg-slate-700 transition text-sm">
+                            <td className="px-6 py-4 text-gray-300">{trade.date}</td>
+                            <td className="px-6 py-4 font-semibold text-white">{trade.symbol}</td>
+                            <td className="px-6 py-4">
+                              <span className={`px-3 py-1 rounded text-xs font-semibold ${trade.type === 'long' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {trade.type.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-gray-300">{trade.entryPrice.toFixed(5)}</td>
+                            <td className="px-6 py-4 text-gray-300">{trade.exitPrice.toFixed(5)}</td>
+                            <td className="px-6 py-4 text-gray-300">{trade.quantity}</td>
+                            <td className={`px-6 py-4 font-semibold ${grossPnL > 0 ? 'text-green-400' : grossPnL < 0 ? 'text-red-400' : 'text-gray-300'}`}>
+                              {grossPnL > 0 ? '+' : ''}{grossPnL.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 text-red-400">-{(trade.commission || 0).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-red-400">-{(trade.fees || 0).toFixed(2)}</td>
+                            <td className={`px-6 py-4 font-semibold ${trade.pnl > 0 ? 'text-green-400' : trade.pnl < 0 ? 'text-red-400' : 'text-gray-300'}`}>
+                              {trade.pnl > 0 ? '+' : ''}{trade.pnl.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 text-gray-300">{trade.setup || '-'}</td>
+                            <td className="px-6 py-4 text-gray-300">{trade.emotion}/10</td>
+                            <td className="px-6 py-4 flex gap-2">
+                              <button onClick={() => handleEdit(trade)} className="text-blue-400 hover:text-blue-300 transition">
+                                <Edit2 size={16} />
+                              </button>
+                              <button onClick={() => handleDelete(trade.id)} className="text-red-400 hover:text-red-300 transition">
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="13" className="px-6 py-12 text-center text-gray-400">
+                          No hay trades registrados
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Stats Finales */}
+            {filteredTrades.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                  <h3 className="text-white font-semibold mb-4">P&L Bruto</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-gray-300"><span>Total:</span><span className={`font-semibold ${filteredTrades.reduce((sum, t) => {
+                      const grossPnL = (t.pnlPercent / 100) * (t.entryPrice * t.quantity);
+                      return sum + grossPnL;
+                    }, 0) > 0 ? 'text-green-400' : 'text-red-400'}`}>${filteredTrades.reduce((sum, t) => {
+                      const grossPnL = (t.pnlPercent / 100) * (t.entryPrice * t.quantity);
+                      return sum + grossPnL;
+                    }, 0).toFixed(2)}</span></div>
+                  </div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                  <h3 className="text-white font-semibold mb-4">Costos Totales</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-gray-300"><span>Comisiones:</span><span className="text-red-400 font-semibold">-${filteredTrades.reduce((sum, t) => sum + (t.commission || 0), 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between text-gray-300"><span>Fees/Swap:</span><span className="text-red-400 font-semibold">-${filteredTrades.reduce((sum, t) => sum + (t.fees || 0), 0).toFixed(2)}</span></div>
+                    <div className="flex justify-between text-gray-300"><span>Total Costos:</span><span className="text-red-400 font-semibold">-${(filteredTrades.reduce((sum, t) => sum + (t.commission || 0), 0) + filteredTrades.reduce((sum, t) => sum + (t.fees || 0), 0)).toFixed(2)}</span></div>
+                  </div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                  <h3 className="text-white font-semibold mb-4">P&L Neto</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-gray-300"><span>Total:</span><span className={`font-semibold ${stats.totalPnL > 0 ? 'text-green-400' : 'text-red-400'}`}>${stats.totalPnL.toFixed(2)}</span></div>
+                  </div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+                  <h3 className="text-white font-semibold mb-4">Estadísticas</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-gray-300"><span>Prom. Ganancia:</span><span className="text-green-400 font-semibold">${stats.avgWin}</span></div>
+                    <div className="flex justify-between text-gray-300"><span>Prom. Pérdida:</span><span className="text-red-400 font-semibold">${stats.avgLoss}</span></div>
+                    <div className="flex justify-between text-gray-300"><span>Mejor Trade:</span><span className="text-green-400 font-semibold">${stats.bestTrade.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-gray-300"><span>Peor Trade:</span><span className="text-red-400 font-semibold">${stats.worstTrade.toFixed(2)}</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<TradingJournal />, document.getElementById('root'));
+  </script>
+</body>
+</html>
